@@ -1,0 +1,1371 @@
+package com.tensei.ytxtube
+
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.res.Configuration
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.HapticFeedbackConstants
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.tappableElement
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Subscriptions
+import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    internal var playerHolder: PlayerState? = null
+    internal var shortsPlayerHolder: androidx.media3.exoplayer.ExoPlayer? = null
+    internal var pipController: PipController? = null
+    internal var intentHandler: ((Intent) -> Unit)? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setHighestRefreshRate()
+        enableHdrOutput()
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        setContent {
+            YtxTubeTheme {
+                Box(Modifier.fillMaxSize()) {
+                    RequestHighFrameRate()
+                    YtxTubeApp()
+                    FpsOverlay()
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setHighestRefreshRate()
+        // Folding or unfolding switches to another screen with its own list of modes, so ask again
+        // whenever the display changes (not only when the app comes back to the front).
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .registerDisplayListener(displayListener, null)
+        }
+    }
+
+    private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) { setHighestRefreshRate() }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        setHighestRefreshRate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) setHighestRefreshRate()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .unregisterDisplayListener(displayListener)
+        }
+        shortsPlayerHolder?.pause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        shortsPlayerHolder?.pause()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!PipSettings.enabled) return
+        val sp = shortsPlayerHolder
+        if (sp != null && sp.isPlaying) {
+            // Shorts should not enter PiP or play in background
+            sp.pause()
+            return
+        }
+        val pip = pipController ?: return
+        if (!pip.supported) return
+        val p = playerHolder
+        if (p != null && p.isPlaying && !p.isMusicMode) {
+            pip.enter(p.videoAspect.takeIf { it > 0 } ?: (16f / 9f))
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intentHandler?.invoke(intent)
+    }
+
+    /**
+     * Asks for the panel's top refresh rate (120 Hz on this phone) for the whole window, on both
+     * screens of a foldable. Three requests, because phones honour different ones:
+     *  - the highest mode at the current resolution, as a display mode and as a rate;
+     *  - on Android 15 and newer, the "high" frame-rate category for the window's views.
+     * It only touches the window when something would actually change, so the display listener
+     * that calls this cannot loop.
+     */
+    private fun setHighestRefreshRate() {
+        runCatching {
+            @Suppress("DEPRECATION")
+            val disp = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay) ?: return@runCatching
+            val currentMode = disp.mode
+            val modes = disp.supportedModes
+            val bestMode = modes
+                .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
+                .maxByOrNull { it.refreshRate }
+                ?: modes.maxByOrNull { it.refreshRate }
+            if (bestMode != null) {
+                val lp = window.attributes
+                var changed = false
+                if (lp.preferredDisplayModeId != bestMode.modeId || lp.preferredRefreshRate != bestMode.refreshRate) {
+                    lp.preferredDisplayModeId = bestMode.modeId
+                    lp.preferredRefreshRate = bestMode.refreshRate
+                    changed = true
+                }
+                if (changed) window.attributes = lp
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            runCatching {
+                window.decorView.requestedFrameRate = android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH
+            }
+            // Opt this window out of the "power savings balanced" frame-rate throttling, which
+            // otherwise lets the system hold an app that did not vote high at about 60 Hz.
+            // Looked up by name so an older SDK stub cannot break the build.
+            runCatching {
+                android.view.Window::class.java
+                    .getMethod("setFrameRatePowerSavingsBalanced", java.lang.Boolean.TYPE)
+                    .invoke(window, false)
+            }
+        }
+    }
+
+    /**
+     * HDR video only reaches the panel when the window opts into the HDR color mode.
+     * Without this the compositor tone-maps 10-bit BT.2020 frames back to SDR.
+     */
+    private fun enableHdrOutput() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        runCatching {
+            @Suppress("DEPRECATION")
+            val disp = display ?: return
+            if (disp.hdrCapabilities?.supportedHdrTypes?.isNotEmpty() == true) {
+                window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_HDR
+            }
+        }
+    }
+}
+
+/** Places in the bottom bar that are not pages. */
+private const val SEARCH_SLOT = "search"
+private const val PROFILE_SLOT = "profile"
+
+enum class Tab(val defaultLabel: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+    Home("Home", Icons.Outlined.Home, Icons.Rounded.Home),
+    Music("Music", Icons.Outlined.MusicNote, Icons.Rounded.MusicNote),
+    Shorts("Shorts", Icons.Outlined.PlayCircle, Icons.Rounded.PlayCircle),
+    Library("Library", Icons.Outlined.VideoLibrary, Icons.Rounded.VideoLibrary),
+    Downloads("Saved", Icons.Outlined.Download, Icons.Rounded.Download);
+
+    val label: String
+        get() = when (this) {
+            Home -> I18n.t("tab_home", defaultLabel)
+            Music -> I18n.t("tab_music", defaultLabel)
+            Shorts -> I18n.t("tab_shorts", defaultLabel)
+            Library -> I18n.t("tab_library", defaultLabel)
+            Downloads -> I18n.t("tab_downloads", defaultLabel)
+        }
+
+    companion object {
+        /** The pages in the bottom bar. Library and Saved are reached from the profile screen. */
+        val bar = listOf(Home, Music, Shorts)
+    }
+}
+
+
+private val NavHeight = 64.dp
+private val NavWidth = 368.dp
+private val NavLift = 10.dp
+private val MiniWidth = 368.dp
+private val MiniGap = 8.dp
+
+@Composable
+fun YtxTubeApp() {
+    val c = MaterialTheme.colorScheme
+    val player = rememberPlayerState()
+    val scope = rememberCoroutineScope()
+    val search = remember { SearchState(scope) }
+    val lib = remember { LibraryData(scope) }
+    var signingIn by remember { mutableStateOf(false) }
+    var openSettings by remember { mutableStateOf(false) }
+    var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
+    var openChannel by remember { mutableStateOf<String?>(null) }
+    var shortsEntry by remember { mutableStateOf<VideoItem?>(null) }
+    var openAllSubscriptions by remember { mutableStateOf(false) }
+    var openSearch by remember { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var isShortsCommentsOpen by remember { mutableStateOf(false) }
+
+
+    LaunchedEffect(tab) { if (tab == Tab.Shorts && player.isPlaying) player.togglePlay() }
+    LaunchedEffect(openSearch) { if (openSearch) search.reset() }
+
+    var channelState by remember { mutableStateOf<ChannelState?>(null) }
+    val playlistFeed = remember(openPlaylist?.id) { openPlaylist?.let { lib.playlistFeed(it.id) } }
+    val updateState = remember { UpdateState(scope) }
+    val appFlipRotation = remember { androidx.compose.animation.core.Animatable(0f) }
+    val appContext = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1_400)
+        updateState.check()
+    }
+    LaunchedEffect(updateState.message) {
+        updateState.message?.let { message ->
+            android.widget.Toast.makeText(appContext, message, android.widget.Toast.LENGTH_SHORT).show()
+            updateState.message = null
+        }
+    }
+
+    val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
+    val reduced = rememberReducedMotion()
+    val morph = remember { PlayerMorph(scope) { expanded -> player.expanded = expanded } }
+    var miniOffsetX by remember { mutableFloatStateOf(0f) }
+    var miniOffsetY by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(player.current?.id) {
+        miniOffsetX = 0f
+        miniOffsetY = 0f
+    }
+
+
+    val pageBackdrop = rememberLayerBackdrop()
+    val playerBackdrop = rememberLayerBackdrop()
+    val glassBackdrop = rememberCombinedBackdrop(pageBackdrop, playerBackdrop)
+
+
+
+    val rootView = LocalView.current
+    DisposableEffect(player.isPlaying) {
+        rootView.keepScreenOn = player.isPlaying
+        onDispose { rootView.keepScreenOn = false }
+    }
+
+
+
+
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(player.expanded) {
+        if (player.expanded) {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
+
+
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> player.setBackground(true)
+                androidx.lifecycle.Lifecycle.Event.ON_START -> player.setBackground(false)
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    val stackBottom = navBottom.coerceAtLeast(8.dp) +
+        if (WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding() > 0.dp) 10.dp else 0.dp
+
+    val navTop = stackBottom + NavLift + NavHeight
+    var optionsFor by remember { mutableStateOf<VideoItem?>(null) }
+    var downloadNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(downloadNotice) {
+        if (downloadNotice != null) {
+            kotlinx.coroutines.delay(4000)
+            downloadNotice = null
+        }
+    }
+    val hasMini = player.current != null
+
+    val contentPadding = PaddingValues(
+        bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 16.dp,
+    )
+
+
+    val activity = LocalContext.current as Activity
+    val mainActivity = activity as? MainActivity
+    val orientation = rememberOrientationController(activity)
+    val playerOpen = player.current != null && player.expanded
+
+    orientation.Bind(playerOpen && !AudioOnly.enabled && !player.isMusicMode)
+    val pip = remember(activity) { PipController(activity as ComponentActivity) }
+
+    SideEffect {
+        mainActivity?.playerHolder = player
+        mainActivity?.pipController = pip
+    }
+
+    val isVideoPlaying = player.isPlaying && !player.isMusicMode
+    val isShortsPlaying = (tab == Tab.Shorts || shortsEntry != null) && mainActivity?.shortsPlayerHolder?.isPlaying == true
+
+    LaunchedEffect(isVideoPlaying, isShortsPlaying, player.videoAspect) {
+        if (isShortsPlaying) {
+            pip.updateAutoPip(true, 9f / 16f)
+        } else if (isVideoPlaying) {
+            pip.updateAutoPip(true, player.videoAspect.takeIf { it > 0 } ?: (16f / 9f))
+        } else {
+            pip.updateAutoPip(false)
+        }
+    }
+
+    fun handleIntent(inIntent: Intent?) {
+        val target = parseIncomingIntent(inIntent) ?: return
+        if (target.isShort) {
+            shortsEntry = VideoItem(
+                id = target.videoId,
+                title = "",
+                channel = "",
+                channelUrl = null,
+                thumbnail = "https://i.ytimg.com/vi/${target.videoId}/hqdefault.jpg",
+                avatar = null,
+                durationSec = 0L,
+                views = 0L,
+                uploaded = null,
+            )
+        } else {
+            player.open(
+                VideoItem(
+                    id = target.videoId,
+                    title = "",
+                    channel = "",
+                    channelUrl = null,
+                    thumbnail = "https://i.ytimg.com/vi/${target.videoId}/hqdefault.jpg",
+                    avatar = null,
+                    durationSec = 0L,
+                    views = 0L,
+                    uploaded = null,
+                )
+            )
+            player.expanded = true
+        }
+    }
+
+    DisposableEffect(mainActivity) {
+        mainActivity?.intentHandler = { handleIntent(it) }
+        handleIntent(mainActivity?.intent)
+        onDispose { mainActivity?.intentHandler = null }
+    }
+
+    pip.Bind(onClosed = { player.controller?.pause() })
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isTabletOrTv = TvMode.isTv || LocalConfiguration.current.smallestScreenWidthDp >= 600
+    // Width of the window right now: an unfolded foldable is wide, the same phone folded is not.
+    val wideScreen = !TvMode.isTv && LocalConfiguration.current.screenWidthDp >= HomeGrid.TWO_COLUMNS_FROM_DP
+    SideEffect { player.wideStage = wideScreen }
+
+    val fullscreenBeforePip = remember { mutableStateOf(false) }
+    val showFullscreen = if (pip.active) fullscreenBeforePip.value
+        else if (isTabletOrTv) (playerOpen && (player.fullscreen || player.portraitFullscreen) && !player.isMusicMode)
+        else (playerOpen && (landscape || player.fullscreen || player.portraitFullscreen) && !player.isMusicMode)
+    SideEffect { if (!pip.active) fullscreenBeforePip.value = showFullscreen }
+    LaunchedEffect(showFullscreen) { player.fullscreen = showFullscreen }
+    SystemBarsHidden(showFullscreen)
+
+    // The player page comes back out of black after leaving fullscreen instead of cutting in.
+    val exitFade = remember { androidx.compose.animation.core.Animatable(1f) }
+
+    fun exitFullscreen() {
+        if (!reduced) {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                exitFade.snapTo(0f)
+                exitFade.animateTo(1f, tween(280, easing = Motion.Emphasized))
+            }
+        }
+        player.portraitFullscreen = false
+        player.fullscreen = false
+        player.expanded = true
+        orientation.exitFullscreen()
+    }
+
+    fun toggleFullscreen() {
+        when {
+            showFullscreen -> exitFullscreen()
+            // A vertical video fills the portrait screen instead of being letterboxed in landscape.
+            player.portraitVideo -> player.portraitFullscreen = true
+            isTabletOrTv -> player.fullscreen = true
+            else -> orientation.enterFullscreen()
+        }
+    }
+
+    BackHandler(enabled = showFullscreen) { exitFullscreen() }
+    BackHandler(enabled = !showFullscreen && player.expanded) { player.expanded = false }
+    BackHandler(enabled = !player.expanded && openSettings) { openSettings = false }
+    BackHandler(enabled = !player.expanded && openAllSubscriptions && openChannel == null) { openAllSubscriptions = false }
+    BackHandler(enabled = !player.expanded && tab != Tab.Home && openPlaylist == null && openChannel == null && !openAllSubscriptions) {
+        if (tab == Tab.Shorts && isShortsPlaying && pip.supported) {
+            val entered = pip.enter(9f / 16f)
+            if (!entered) tab = Tab.Home
+        } else {
+            tab = Tab.Home
+        }
+    }
+    BackHandler(enabled = !player.expanded && openSearch) { openSearch = false }
+    BackHandler(enabled = !player.expanded && openPlaylist != null) { openPlaylist = null }
+    BackHandler(enabled = signingIn) { signingIn = false }
+    BackHandler(enabled = !player.expanded && openChannel != null) { openChannel = null }
+
+    BackHandler(enabled = showFullscreen) { exitFullscreen() }
+    BackHandler(enabled = shortsEntry != null) {
+        mainActivity?.shortsPlayerHolder?.pause()
+        shortsEntry = null
+    }
+    BackHandler(enabled = updateState.visible) { updateState.dismiss() }
+
+    val canHandleRootBack = !player.expanded && !openSettings && !openAllSubscriptions &&
+        tab == Tab.Home && openPlaylist == null && openChannel == null &&
+        !openSearch && !signingIn && !showFullscreen && shortsEntry == null && !updateState.visible
+    BackHandler(enabled = canHandleRootBack) {
+        if (isVideoPlaying && pip.supported) {
+            val entered = pip.enter(player.videoAspect.takeIf { it > 0 } ?: (16f / 9f))
+            if (!entered) {
+                pip.updateAutoPip(false)
+                activity.moveTaskToBack(true)
+            }
+        } else {
+            mainActivity?.shortsPlayerHolder?.pause()
+            pip.updateAutoPip(false)
+            activity.moveTaskToBack(true)
+        }
+    }
+
+    val density = LocalDensity.current
+
+
+
+    LaunchedEffect(player.expanded, player.current?.id) {
+        if (player.current == null) morph.progress.snapTo(0f) else morph.animateTo(player.expanded, reduced)
+    }
+    val showPlayer by remember {
+
+        derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
+
+        val stageAspect = player.stageAspect
+        // The video goes right up under the status bar (clock and camera over its top edge);
+        // only the TV layout keeps it below.
+        val stageTopPx = if (!TvMode.isTv) 0f else with(density) {
+            WindowInsets.statusBars.asPaddingValues().calculateTopPadding().toPx()
+        }
+        val isLiquidMini = player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer
+        val geometry = remember(constraints.maxWidth, constraints.maxHeight, stackBottom, density, stageAspect, stageTopPx, miniOffsetX, miniOffsetY, isLiquidMini) {
+            with(density) {
+                val w = constraints.maxWidth.toFloat()
+                val h = constraints.maxHeight.toFloat()
+                val miniBottom = h - (navTop + MiniGap).toPx()
+                val side = StageSideGap.toPx()
+                val stageTop = stageTopPx
+                val stage = Rect(side, stageTop, w - side, stageTop + (w - 2 * side) / stageAspect)
+
+                if (isLiquidMini) {
+                    val miniW = minOf(w - 32.dp.toPx(), MiniWidth.toPx())
+                    val miniLeft = (w - miniW) / 2f
+                    val miniCard = Rect(miniLeft, miniBottom - MiniHeight.toPx(), miniLeft + miniW, miniBottom)
+                    val thumb = Rect(
+                        Offset(miniCard.left + MiniThumbStart.toPx(), miniCard.top + (MiniHeight - MiniThumbHeight).toPx() / 2f),
+                        Size(MiniThumbWidth.toPx(), MiniThumbHeight.toPx()),
+                    )
+                    MorphGeometry(
+                        screen = Size(w, h),
+                        miniCard = miniCard,
+                        miniThumb = thumb,
+                        stage = stage,
+                        miniRadius = MiniRadius.toPx(),
+                        thumbRadius = MiniThumbRadius.toPx(),
+                        stageRadius = StageRadius.toPx(),
+                    )
+                } else {
+                    val cardWidth = 200.dp.toPx().coerceAtMost(w - 32.dp.toPx())
+                    val cardHeight = cardWidth * 9f / 16f
+                    val cardRight = w - 16.dp.toPx()
+                    val baseCard = Rect(cardRight - cardWidth, miniBottom - cardHeight, cardRight, miniBottom)
+                    val miniCard = baseCard.translate(miniOffsetX, miniOffsetY)
+                    MorphGeometry(
+                        screen = Size(w, h),
+                        miniCard = miniCard,
+                        miniThumb = miniCard,
+                        stage = stage,
+                        miniRadius = 12.dp.toPx(),
+                        thumbRadius = 12.dp.toPx(),
+                        stageRadius = StageRadius.toPx(),
+                    )
+                }
+            }
+        }
+        SideEffect { morph.geometry = geometry }
+
+
+
+        val sharedSurface = remember(player) {
+            androidx.compose.runtime.movableContentOf { m: Modifier -> VideoSurface(player.controller, m) }
+        }
+        CompositionLocalProvider(
+            LocalVideoSurface provides if (pip.active) NoVideoSurface else sharedSurface,
+            LocalPictureInPicture provides pip,
+            LocalVideoMenu provides { optionsFor = it },
+            LocalVideoActions provides VideoActions(
+                addToQueue = { player.addToQueue(it) },
+                watchLater = { player.saveToWatchLater(it) },
+            ),
+            LocalPlaylistOpener provides { ref ->
+                player.expanded = false
+                openPlaylist = ref
+            },
+            LocalChannelOpener provides { url ->
+
+                player.expanded = false
+                if (channelState?.url != url) channelState = ChannelState(url, scope)
+                openChannel = url
+            },
+        ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(pageBackdrop)
+                .background(c.surface)
+                .graphicsLayer {
+                    rotationY = appFlipRotation.value
+                    cameraDistance = 16f
+                }
+        ) {
+        AnimatedContent(
+            targetState = tab,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = if (TvMode.isTv) 1280.dp else Dp.Unspecified)
+                .fillMaxHeight(),
+            transitionSpec = {
+                if (reduced) fadeIn(snap()) togetherWith fadeOut(snap())
+                else (fadeIn(tween(Motion.PageEnterMs, easing = Motion.Emphasized)) +
+                    slideInVertically(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { (it / 35).coerceIn(8, 24) }) togetherWith
+                    fadeOut(tween(Motion.PageExitMs))
+            },
+            label = "tabs",
+        ) { t ->
+            when (t) {
+                Tab.Home -> HomeScreen(
+                    lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
+                    onSignIn = { signingIn = true }, onAccount = { openSettings = true },
+                    scrollToTop = scrollToTop[Tab.Home] ?: 0,
+                )
+                Tab.Music -> MusicScreen(
+                    lib, player, contentPadding,
+                    onAccount = { openSettings = true },
+                    scrollToTop = scrollToTop[Tab.Music] ?: 0,
+                )
+                Tab.Shorts -> ShortsScreen(
+                    onBack = { tab = Tab.Home },
+                    onSignIn = { signingIn = true },
+                    onSearch = { openSearch = true },
+                    bottomInset = navTop + 12.dp,
+                    active = openChannel == null && !openSearch && !openSettings,
+                    onOpenChannel = { url ->
+                        player.expanded = false
+                        if (channelState?.url != url) channelState = ChannelState(url, scope)
+                        openChannel = url
+                    },
+                    onCommentsOpenChange = { isShortsCommentsOpen = it },
+                )
+                Tab.Library -> LibraryScreen(
+                    lib, contentPadding, onOpen = player::open, onOpenPlaylist = { ref -> if (ref.id == "DL") tab = Tab.Downloads else openPlaylist = ref },
+                    onOpenChannel = { url ->
+                        player.expanded = false
+                        if (channelState?.url != url) channelState = ChannelState(url, scope)
+                        openChannel = url
+                    },
+                    onOpenAllSubscriptions = { openAllSubscriptions = true },
+                    onSearch = { openSearch = true },
+                    onSignIn = { signingIn = true }, onAccount = { openSettings = true },
+                    scrollToTop = scrollToTop[Tab.Library] ?: 0,
+                )
+                Tab.Downloads -> DownloadsScreen(
+                    contentPadding,
+                    onOpen = player::open,
+                    onOpenMusic = player::openMusic,
+                    onBrowse = { tab = Tab.Home },
+                    onBrowseMusic = { tab = Tab.Music },
+                    onSearch = { openSearch = true },
+                    onAccount = { openSettings = true },
+                    scrollToTop = scrollToTop[Tab.Downloads] ?: 0,
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = openSearch,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            SearchScreen(
+                search,
+                contentPadding,
+                onBack = { openSearch = false },
+                onOpen = player::open,
+            )
+        }
+
+
+        AnimatedVisibility(
+            visible = openPlaylist != null,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            val pl = openPlaylist
+            val feed = playlistFeed
+            if (pl != null && feed != null) {
+                PlaylistScreen(
+                    pl, feed, contentPadding,
+                    onBack = { openPlaylist = null },
+                    onOpen = { video ->
+                        if (pl.id == "MDL") player.openMusic(video)
+                        else player.open(video)
+                    },
+                    channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
+                )
+            }
+        }
+
+
+        AnimatedVisibility(
+            visible = openAllSubscriptions,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            AllSubscriptionsScreen(
+                channels = lib.channels,
+                contentPadding = contentPadding,
+                onBack = { openAllSubscriptions = false },
+            )
+        }
+
+
+        AnimatedVisibility(
+            visible = openChannel != null,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            channelState?.let { ch ->
+                ChannelScreen(
+                    ch,
+                    contentPadding,
+                    onBack = { openChannel = null },
+                    onOpen = player::open,
+                    onOpenShort = { video ->
+                        player.expanded = false
+                        shortsEntry = video
+                    },
+                    onMessage = { player.actionMessage = it },
+                )
+            }
+        }
+
+
+        AnimatedVisibility(
+            visible = openSettings,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            SettingsScreen(
+                onBack = { openSettings = false },
+                onSignIn = { signingIn = true },
+                onSignedOut = { lib.reset(); lib.home.refresh(); player.refreshAccountState() },
+                onAccountSwitched = {
+                    scope.launch {
+                        appFlipRotation.animateTo(90f, tween(240, easing = androidx.compose.animation.core.FastOutLinearInEasing))
+                        lib.reset()
+                        lib.home.refresh()
+                        player.refreshAccountState()
+                        appFlipRotation.snapTo(-90f)
+                        appFlipRotation.animateTo(0f, tween(300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                    }
+                },
+                contentPadding = PaddingValues(bottom = navBottom),
+                onCheckUpdate = { updateState.check(manual = true) },
+                onOpenLibrary = {
+                    openSettings = false
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = Tab.Library
+                },
+                onOpenDownloads = {
+                    openSettings = false
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = Tab.Downloads
+                },
+            )
+        }
+
+
+        BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
+
+        }
+
+        if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null) {
+            val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(player.current?.id) { dismiss.snapTo(0f) }
+            // Swiping the mini player sideways closes it, like YouTube's.
+            val dismissX = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(player.current?.id) { dismissX.snapTo(0f) }
+            val dismissDistance = with(density) { 56.dp.toPx() }
+            val swipeView = androidx.compose.ui.platform.LocalView.current
+
+            if (player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer) {
+                LiquidMiniPlayer(
+                    player,
+                    onExpand = { player.expanded = true },
+                    showVideo = !showPlayer && !showFullscreen,
+                    backdrop = pageBackdrop,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
+                        .widthIn(max = MiniWidth)
+                        .graphicsLayer {
+                            translationY = dismiss.value
+                            translationX = dismissX.value
+                            alpha = (if (showPlayer) 0f else 1f) *
+                                (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f)) *
+                                (1f - (kotlin.math.abs(dismissX.value) / (dismissDistance * 5f)).coerceIn(0f, 1f))
+                        }
+                        .draggable(
+                            state = rememberDraggableState { delta ->
+                                scope.launch { dismissX.snapTo(dismissX.value + delta) }
+                            },
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = { velocity ->
+                                // Swipe left: next video or song; swipe right: the one before. The
+                                // card slides out that way and the new one slides in from the other
+                                // side. (Swipe down still closes the player.)
+                                val far = kotlin.math.abs(dismissX.value) > dismissDistance * 1.2f || kotlin.math.abs(velocity) > 900f
+                                scope.launch {
+                                    if (far) {
+                                        val dir = if (dismissX.value != 0f) kotlin.math.sign(dismissX.value) else kotlin.math.sign(velocity)
+                                        val width = constraints.maxWidth.toFloat()
+                                        Haptics.confirm(swipeView)
+                                        if (!reduced) dismissX.animateTo(dir * width * 0.7f, tween(150, easing = Motion.Emphasized))
+                                        if (dir < 0f) player.skipNext() else player.swipePrevious()
+                                        dismissX.snapTo(-dir * width * 0.5f)
+                                        dismissX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f))
+                                    } else {
+                                        dismissX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
+                                    }
+                                }
+                            },
+                        )
+                        .draggable(
+                            state = rememberDraggableState { delta ->
+                                if (morph.progress.value <= 0f && (delta > 0f || dismiss.value > 0f)) {
+                                    scope.launch { dismiss.snapTo((dismiss.value + delta).coerceAtLeast(0f)) }
+                                } else {
+                                    morph.dragBy(delta)
+                                }
+                            },
+                            orientation = Orientation.Vertical,
+                            onDragStopped = { velocity ->
+                                if (dismiss.value > 0f) {
+                                    if (dismiss.value > dismissDistance || velocity > 800f) {
+                                        scope.launch {
+                                            if (!reduced) dismiss.animateTo(dismissDistance * 2.2f, tween(200, easing = Motion.Emphasized))
+                                            player.close()
+                                        }
+                                    } else {
+                                        scope.launch { dismiss.snapTo(0f) }
+                                    }
+                                } else {
+                                    morph.settle(velocity, reduced)
+                                }
+                            },
+                        ),
+                )
+            } else {
+                val cardWidthPx = with(density) { 200.dp.toPx() }
+                val screenW = constraints.maxWidth.toFloat()
+                val screenH = constraints.maxHeight.toFloat()
+                MiniPlayer(
+                    state = player,
+                    onExpand = { player.expanded = true },
+                    showVideo = !showPlayer && !showFullscreen,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset { IntOffset(miniOffsetX.roundToInt(), miniOffsetY.roundToInt()) }
+                        .padding(start = 16.dp, end = 16.dp, bottom = navTop + MiniGap)
+                        .widthIn(max = 200.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                val minX = -(screenW - cardWidthPx - 32.dp.toPx())
+                                val maxX = 0f
+                                miniOffsetX = (miniOffsetX + dragAmount.x).coerceIn(minX, maxX)
+                                val minY = -(screenH - 240.dp.toPx())
+                                val maxY = 80.dp.toPx()
+                                miniOffsetY = (miniOffsetY + dragAmount.y).coerceIn(minY, maxY)
+                            }
+                        }
+                        .graphicsLayer {
+                            translationY = dismiss.value
+                            alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
+                        },
+                )
+            }
+        }
+
+        val selectTab: (Tab) -> Unit = { selected ->
+            when {
+
+                selected == tab && openSearch -> openSearch = false
+                selected == tab && openChannel != null -> openChannel = null
+                selected == tab && openPlaylist != null -> openPlaylist = null
+                selected == tab && openAllSubscriptions -> openAllSubscriptions = false
+                selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
+                else -> {
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = selected
+                }
+            }
+        }
+
+
+        val showBottomBar = !openSettings && shortsEntry == null && !pip.active && (tab != Tab.Shorts || !isShortsCommentsOpen)
+        AnimatedVisibility(
+            visible = showBottomBar,
+            enter = slideInVertically(tween(260, easing = Motion.Emphasized)) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(tween(140)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom + NavLift)
+                .widthIn(max = NavWidth)
+                .fillMaxWidth(),
+        ) {
+            // Home, Music, Search in the middle, Shorts, then the profile. Search and the profile
+            // open a screen, not a page.
+            val barTabs = Tab.bar
+            val slots: List<Any> = listOf(Tab.Home, Tab.Music, SEARCH_SLOT, Tab.Shorts, PROFILE_SLOT)
+            val searchIndex = slots.indexOf(SEARCH_SLOT)
+            val profileIndex = slots.indexOf(PROFILE_SLOT)
+            // Library and Saved open from the profile, so while one of them is showing the
+            // highlight sits on Profile.
+            val onProfilePage = tab !in barTabs
+            LiquidBottomBar(
+                selectedTabIndex = {
+                    when {
+                        openSearch -> searchIndex
+                        tab in barTabs -> slots.indexOf(tab).takeIf { it >= 0 } ?: profileIndex
+                        else -> profileIndex
+                    }
+                },
+                onTabSelected = { index ->
+                    when (val slot = slots.getOrNull(index)) {
+                        SEARCH_SLOT -> openSearch = true
+                        PROFILE_SLOT -> openSettings = true
+                        is Tab -> selectTab(slot)
+                        else -> Unit
+                    }
+                },
+                backdrop = pageBackdrop,
+                tabsCount = slots.size,
+                isDarkSurface = tab == Tab.Shorts,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                slots.forEach { slot ->
+                    when (slot) {
+                        SEARCH_SLOT -> LiquidSearchTab(selected = openSearch, isDarkSurface = tab == Tab.Shorts) { openSearch = true }
+                        PROFILE_SLOT -> LiquidProfileTab(selected = onProfilePage && !openSearch, isDarkSurface = tab == Tab.Shorts) { openSettings = true }
+                        is Tab -> LiquidNavTab(slot, slot == tab && !openSearch, isDarkSurface = tab == Tab.Shorts) { selectTab(slot) }
+                    }
+                }
+            }
+        }
+
+
+
+        shortsEntry?.let { entry ->
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                ShortsScreen(
+                    onBack = { shortsEntry = null },
+                    onSignIn = { signingIn = true },
+                    onSearch = { openSearch = true },
+                    bottomInset = 12.dp,
+                    startItem = entry,
+                    active = openChannel == null && !openSearch,
+                    onOpenChannel = { url ->
+                        shortsEntry = null
+                        player.expanded = false
+                        if (channelState?.url != url) channelState = ChannelState(url, scope)
+                        openChannel = url
+                    },
+                )
+            }
+        }
+
+        if (showFullscreen) {
+            // The screen goes fully black first and only then does the video settle in, so the
+            // feed never shows through a half-faded video (that was the white outline). A swipe
+            // up arrives already dark, because the page dimmed under the finger.
+            val enter = remember { androidx.compose.animation.core.Animatable(if (reduced) 1f else 0f) }
+            val startDark = remember { player.enterFrom }
+            LaunchedEffect(Unit) {
+                player.enterFrom = 0f
+                player.enterDrag.snapTo(0f)
+                if (reduced) enter.snapTo(1f) else enter.animateTo(1f, tween(Motion.FullscreenEnterMs, easing = Motion.FullscreenEase))
+            }
+            DisposableEffect(Unit) {
+                onDispose { scope.launch(start = CoroutineStart.UNDISPATCHED) { player.exitDrag.snapTo(0f) } }
+            }
+            Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = maxOf(startDark, (enter.value * 4f).coerceAtMost(1f)) }
+                        .background(Color.Black),
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = enter.value
+                            // A swipe down shrinks the video away from the finger.
+                            val d = player.exitDrag.value
+                            alpha = ((p - 0.25f) / 0.45f).coerceIn(0f, 1f) * (1f - 0.3f * d)
+                            val s = (0.94f + 0.06f * p) * (1f - 0.12f * d)
+                            scaleX = s
+                            scaleY = s
+                            translationY = size.height * 0.04f * (1f - p) + d * 96.dp.toPx()
+                        },
+                ) {
+                    FullscreenPlayer(player, onExit = { exitFullscreen() })
+                }
+            }
+        } else if (showPlayer) {
+            Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val f = exitFade.value
+                            if (f < 1f) drawRect(Color.Black.copy(alpha = 1f - f))
+                        }
+                        .graphicsLayer { alpha = exitFade.value },
+                ) {
+                    PlayerScreen(
+                        player, morph,
+                        onOpen = player::open,
+                        onCollapse = { player.expanded = false },
+                        onFullscreen = { toggleFullscreen() },
+                        onSignIn = { signingIn = true },
+                    )
+                }
+            }
+        }
+
+        if (signingIn) {
+            SignInScreen(
+                onDone = {
+                    signingIn = false
+                    lib.reset()
+                    lib.home.refresh()
+                    lib.loadChannels()
+                    player.refreshAccountState()
+                },
+                onCancel = { signingIn = false },
+            )
+        }
+
+        when (player.sheet) {
+            PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Subtitles -> SubtitlesSheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Settings -> Unit
+            PlayerSheet.Comments -> Unit
+            PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Chapters -> ChaptersSheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Speed -> Unit
+            PlayerSheet.Audio -> Unit
+            null -> Unit
+        }
+
+        AnimatedVisibility(
+            visible = player.sheet == PlayerSheet.Settings,
+            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+            exit = fadeOut(tween(150)),
+        ) {
+            PlayerSettingsSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+        }
+
+        AnimatedVisibility(
+            visible = player.sheet == PlayerSheet.Speed,
+            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+            exit = fadeOut(tween(150)),
+        ) {
+            SpeedSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+        }
+
+        AnimatedVisibility(
+            visible = player.sheet == PlayerSheet.Audio,
+            enter = fadeIn(tween(180, easing = Motion.Emphasized)),
+            exit = fadeOut(tween(150)),
+        ) {
+            AudioTrackSheet(player, glassBackdrop, onDismiss = { player.sheet = null })
+        }
+
+
+
+        player.downloadFor?.let { video ->
+            DownloadQualitySheet(
+                video = video,
+                onDownloadStarted = { msg -> downloadNotice = msg },
+                onDismiss = { player.downloadFor = null },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = downloadNotice != null,
+            enter = slideInVertically(tween(280, easing = Motion.Emphasized)) { it } + fadeIn(),
+            exit = slideOutVertically(tween(200, easing = Motion.Emphasized)) { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp)
+                .padding(horizontal = 20.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = c.surfaceContainerHighest,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+                modifier = Modifier.widthIn(max = 420.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.Download,
+                        contentDescription = null,
+                        tint = c.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        downloadNotice.orEmpty(),
+                        color = c.onSurface,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            tab = Tab.Downloads
+                            downloadNotice = null
+                            if (showPlayer) player.expanded = false
+                        },
+                    ) {
+                        Text("VIEW", fontWeight = FontWeight.Bold, color = c.primary, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+        optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
+
+        if (!showPlayer) {
+            QueueMessage(player, Modifier.align(Alignment.BottomCenter).padding(bottom = navTop + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp))
+        }
+
+
+        if (pip.active) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                sharedSurface(Modifier.fillMaxSize().aspectFit(player.videoAspect))
+            }
+        }
+
+        UpdateOverlay(updateState, pageBackdrop)
+        }
+    }
+}
+
+@Composable
+private fun QueueMessage(player: PlayerState, modifier: Modifier) {
+    val message = player.actionMessage ?: return
+    LaunchedEffect(message) {
+        kotlinx.coroutines.delay(2_000)
+        player.actionMessage = null
+    }
+    val c = MaterialTheme.colorScheme
+    Box(modifier.clip(RoundedCornerShape(50)).background(c.inverseSurface).padding(horizontal = 18.dp, vertical = 11.dp)) {
+        Text(message, color = c.inverseOnSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    }
+}
+
+
+
+
+
+
+@Composable
+private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    val reduced = rememberReducedMotion()
+    val shape = RoundedCornerShape(32.dp)
+
+    Surface(
+        modifier = modifier
+            .widthIn(max = NavWidth)
+            .height(NavHeight)
+            .fillMaxWidth()
+            .shadow(
+                elevation = 16.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.20f),
+                spotColor = Color.Black.copy(alpha = 0.30f),
+            ),
+        shape = shape,
+        color = c.surfaceContainerHigh,
+        tonalElevation = 6.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Tab.entries.forEach { t ->
+                val active = t == selected
+                val contentColor by animateColorAsState(
+                    if (active) c.onSurface else c.onSurfaceVariant,
+                    animationSpec = tween(180),
+                    label = "tabContentColor",
+                )
+                val pillColor by animateColorAsState(
+                    if (active) c.onSurface.copy(alpha = 0.12f) else Color.Transparent,
+                    animationSpec = tween(180),
+                    label = "tabPillColor",
+                )
+                val iconScale by animateFloatAsState(
+                    if (active) 1.08f else 1.0f,
+                    animationSpec = if (reduced) snap() else spring(dampingRatio = 0.65f, stiffness = 450f),
+                    label = "iconScale",
+                )
+                val interaction = remember(t) { MutableInteractionSource() }
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(interactionSource = interaction, indication = null) {
+                            Haptics.perform(view, HapticFeedbackConstants.CONTEXT_CLICK)
+                            onSelect(t)
+                        },
+                    shape = RoundedCornerShape(24.dp),
+                    color = pillColor,
+                    contentColor = contentColor,
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(top = 2.5.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                if (active) t.selectedIcon else t.icon,
+                                contentDescription = t.label,
+                                tint = contentColor,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                    },
+                            )
+                            Text(
+                                t.label,
+                                color = contentColor,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal data class YouTubeLinkTarget(val videoId: String, val isShort: Boolean)
+
+internal fun parseIncomingIntent(intent: Intent?): YouTubeLinkTarget? {
+    if (intent == null) return null
+    val raw = when (intent.action) {
+        Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+        Intent.ACTION_VIEW -> intent.dataString
+        else -> intent.dataString ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+    } ?: return null
+    return parseYouTubeLink(raw)
+}
+
+internal fun parseYouTubeLink(text: String): YouTubeLinkTarget? {
+    if (text.isBlank()) return null
+    val urlRegex = Regex("""(?i)\b(?:https?://|vnd\.youtube:)?(?:(?:www\.|m\.)?youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|live/|embed/|v/)|youtu\.be/)([\w-]{11})""")
+    val match = urlRegex.find(text)
+    if (match != null) {
+        val videoId = match.groupValues[1]
+        val isShort = text.contains("/shorts/", ignoreCase = true)
+        return YouTubeLinkTarget(videoId, isShort)
+    }
+    if (text.matches(Regex("""^[\w-]{11}$"""))) {
+        return YouTubeLinkTarget(text, false)
+    }
+    return null
+}

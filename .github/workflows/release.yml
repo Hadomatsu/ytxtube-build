@@ -1,0 +1,103 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tok:
+        description: 'Also build YTXTok'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# A newer push makes an older build still running pointless: stop it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      # YTXTok is paused: it is only rebuilt when its own files change or when asked for, which
+      # halves the build (both apps compile the whole shared code and run R8 separately).
+      - name: Decide what to build
+        id: what
+        run: |
+          TASKS=":app:assembleYtRelease"
+          if [ "${{ github.event.inputs.tok }}" = "true" ] || git diff --name-only HEAD^ HEAD 2>/dev/null | grep -q '^app/src/tok/'; then
+            TASKS="$TASKS :app:assembleTokRelease"
+          fi
+          echo "tasks=$TASKS" >> $GITHUB_OUTPUT
+
+      - name: Build Release APKs
+        run: ./gradlew ${{ steps.what.outputs.tasks }} --stacktrace
+
+      - name: Prepare APK Artifacts
+        run: |
+          cp app/build/outputs/apk/yt/release/app-yt-release.apk YTXTube.apk
+          if [ -f app/build/outputs/apk/tok/release/app-tok-release.apk ]; then
+            cp app/build/outputs/apk/tok/release/app-tok-release.apk YTXTok.apk
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YTXTube
+          if-no-files-found: ignore
+          path: |
+            YTXTube.apk
+            YTXTok.apk
+
+      - name: Read version
+        id: version
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "name=$VER" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: YTXTube Custom ${{ steps.version.outputs.name }}
+          files: |
+            YTXTube.apk
+            YTXTok.apk
+          body: |
+            Custom build on top of YTXTube.
+
+            - Home feed shows videos side by side (2 columns on the cover screen, more on the open screen).
+            - Subtitle button on the player, captions switch on without delay.
+            - Word by word captions: only the words already spoken are shown.
+            - Installs next to the original YTXTube (different app id).
+            - YTXTok.apk is the separate TikTok app (own app id, own icon).
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
