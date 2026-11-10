@@ -11,8 +11,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -97,6 +105,16 @@ object ThumbTint {
     }
 
     /** The thumbnail colour made calm enough to sit behind text on this theme's background. */
+    /** The thumbnail's colour as a text accent: vivid, light on dark panels, deep on light ones. */
+    fun accentFor(raw: Int, dark: Boolean): Color {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(raw, hsl)
+        // Grey thumbnails would give a grey accent: keep at least some colour.
+        hsl[1] = (hsl[1] * 1.35f).coerceIn(0.45f, 0.95f)
+        hsl[2] = if (dark) 0.72f else 0.36f
+        return Color(ColorUtils.HSLToColor(hsl))
+    }
+
     fun forBackground(raw: Int, background: Color): Color {
         val hsl = FloatArray(3)
         ColorUtils.colorToHSL(raw, hsl)
@@ -123,36 +141,96 @@ fun Modifier.thumbnailGlow(
     val raw by produceState(ThumbTint.cached(videoId), videoId, url) {
         if (value == null) value = ThumbTint.load(context, videoId, url)
     }
-    val target = remember(raw, background) {
-        raw?.let { lerp(background, ThumbTint.forBackground(it, background), strength) } ?: background
+    // AMOLED mixes the glow from dark mode's background (not pure black), so the colour is just
+    // as bright as in dark mode; only the very end of the fade is black.
+    val amoled = ThemeSettings.mode == "amoled"
+    val seed = ThemeSettings.seed
+    val glowBase = remember(amoled, seed, background) {
+        if (amoled) schemeFor(context, seed, true).background else background
+    }
+    val target = remember(raw, glowBase) {
+        raw?.let { lerp(glowBase, ThumbTint.forBackground(it, glowBase), strength) } ?: background
     }
     val top by animateColorAsState(target, tween(420), label = "thumb-glow")
+    if (LocalPlayerGlass.current != null) {
+        // On the video page the cards sit on the blurred picture, so nothing fades to the page
+        // colour (that was a black block). The thumbnail's colour glows out from under the
+        // picture like light and fades to nothing, softly at the sides too.
+        val glow = raw?.let { ThumbTint.forBackground(it, background) } ?: top
+        return graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawBehind {
+                val end = size.height
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to glow.copy(alpha = 0.55f),
+                        0.25f to glow.copy(alpha = 0.32f),
+                        0.6f to glow.copy(alpha = 0.10f),
+                        1f to glow.copy(alpha = 0f),
+                        startY = 0f,
+                        endY = end,
+                    ),
+                )
+                drawRect(
+                    Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        0.12f to Color.Black,
+                        0.88f to Color.Black,
+                        1f to Color.Transparent,
+                    ),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+    }
     return drawBehind {
         val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height
         // An eased fade, so there is no visible line where the colour runs out.
         val brush = Brush.verticalGradient(
             0f to top,
-            0.3f to lerp(background, top, 0.55f),
-            0.6f to lerp(background, top, 0.2f),
+            0.3f to lerp(glowBase, top, 0.55f),
+            0.6f to lerp(glowBase, top, 0.2f),
             0.85f to lerp(background, top, 0.04f),
             1f to background,
             startY = 0f,
             endY = end,
         )
         drawRect(brush)
-        // Soften the left and right sides too, so the colour has no hard edge where the card ends.
-        val edge = 26.dp.toPx().coerceAtMost(size.width / 3f)
-        val f = edge / size.width
+        // Soften the left and right sides, so the colour has no hard edge where the card ends.
+        // Right under the picture the colour spreads almost to the corners; lower down the sides
+        // fade in more, so the glow fans out from the picture's bottom edge.
         val clear = background.copy(alpha = 0f)
-        drawRect(
-            Brush.horizontalGradient(
-                0f to background,
-                f * 0.45f to background.copy(alpha = 0.6f),
-                f to clear,
-                1f - f to clear,
-                1f - f * 0.45f to background.copy(alpha = 0.6f),
-                1f to background,
-            ),
-        )
+        val bands = 16
+        val bandH = size.height / bands
+        for (i in 0 until bands) {
+            val t = (i + 0.5f) / bands
+            val edge = lerp(6.dp.toPx(), 34.dp.toPx(), t).coerceAtMost(size.width / 3f)
+            val f = edge / size.width
+            drawRect(
+                Brush.horizontalGradient(
+                    0f to background,
+                    f * 0.45f to background.copy(alpha = 0.6f),
+                    f to clear,
+                    1f - f to clear,
+                    1f - f * 0.45f to background.copy(alpha = 0.6f),
+                    1f to background,
+                ),
+                topLeft = Offset(0f, i * bandH),
+                size = androidx.compose.ui.geometry.Size(size.width, bandH + 0.5f),
+            )
+        }
     }
+}
+
+
+/**
+ * Card text style. On the video page, where the cards sit on the blurred picture, the text gets
+ * a soft shadow so it stays readable over any colour.
+ */
+@Composable
+fun cardTextStyle(): TextStyle {
+    val base = LocalTextStyle.current
+    if (LocalPlayerGlass.current == null) return base
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
+    val shadow = if (dark) Shadow(Color.Black.copy(alpha = 0.75f), Offset(0f, 1.5f), 8f)
+    else Shadow(Color.White.copy(alpha = 0.9f), Offset(0f, 1f), 6f)
+    return base.copy(shadow = shadow)
 }

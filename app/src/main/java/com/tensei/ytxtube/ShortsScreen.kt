@@ -858,7 +858,15 @@ fun ShortsScreen(
                                 // not a tap, so it no longer pauses the Short.
                                 var heldFast = false
                                 detectTapGestures(
-                                    onTap = { if (!heldFast) togglePlayback() },
+                                    // With the comments open, a tap anywhere on the Short puts
+                                    // them away (and does not pause).
+                                    onTap = {
+                                        when {
+                                            heldFast -> Unit
+                                            commentsOpen -> commentsOpen = false
+                                            else -> togglePlayback()
+                                        }
+                                    },
                                     onPress = {
                                         heldFast = false
                                         var activated = false
@@ -1236,6 +1244,8 @@ fun ShortsScreen(
                         creatorName = info?.uploaderName.orEmpty(),
                         backdrop = feedBackdrop,
                         floating = true,
+                        accentVideoId = current?.id,
+                        accentThumbnail = current?.thumbnail,
                     )
                 }
             }
@@ -1247,6 +1257,8 @@ fun ShortsScreen(
                 creatorAvatar = info?.uploaderAvatars?.maxByOrNull { it.width }?.url,
                 creatorName = info?.uploaderName.orEmpty(),
                 backdrop = feedBackdrop,
+                accentVideoId = current?.id,
+                accentThumbnail = current?.thumbnail,
             )
         }
 

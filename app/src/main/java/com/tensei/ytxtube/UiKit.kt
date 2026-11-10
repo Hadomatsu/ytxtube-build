@@ -387,7 +387,15 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        Box(Modifier.fillMaxWidth().skimGesture(video) { skimMs = it }) {
+        // On the video page the picture gets slightly rounded corners and a little room at the
+        // sides; in the feed it stays edge to edge.
+        val onVideoPage = LocalPlayerGlass.current != null
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .then(if (onVideoPage) Modifier.padding(horizontal = 10.dp).clip(RoundedCornerShape(12.dp)) else Modifier)
+                .skimGesture(video) { skimMs = it },
+        ) {
             val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
@@ -420,6 +428,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
+                    style = cardTextStyle(),
                     fontWeight = FontWeight.Normal,
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
@@ -430,6 +439,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
                     modifier = Modifier.onPlaced { metaTop = with(density) { 12.dp.toPx() } + it.positionInParent().y },
+                    style = cardTextStyle(),
                     color = c.onSurfaceVariant,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
@@ -497,6 +507,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
+                    style = cardTextStyle(),
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
                     lineHeight = 17.sp,
@@ -507,6 +518,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
                     modifier = Modifier.onPlaced { metaTop = with(density) { 8.dp.toPx() } + it.positionInParent().y },
+                    style = cardTextStyle(),
                     color = c.onSurfaceVariant,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,
