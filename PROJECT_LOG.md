@@ -128,3 +128,21 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Captions: long press then drag, saved as the centre's share of the video size (so it holds in every video and in fullscreen), kept on the video, snapping to the middle across and up/down within 22 dp with a guide line and a tick. Holding the captions does not start 2x and is not a player swipe. A reset button in the caption size panel, shown only once moved, because otherwise there was no way back. The first version lost the drag at once because the captions switched to a different composable when moved; one CaptionLines now serves every placement. Landscape: "big screen" means landscape with smallest width at least 600 dp (unfolded foldables, tablets). Subscribe is glass in every layout, moved only in landscape.
 - **Shipped:** fe4de8c (captions), the landscape commit after it. Local, not pushed. 2.6.19 was released before these.
 - **Open:** The owner's captions were left near the middle by the test: hold the CC button and tap the round-arrow reset. Portrait unfolded not re-checked after the landscape change. Release these.
+
+## 2026-11-14 - 2.6.20 released
+- **Asked:** Release the movable captions and the landscape video page.
+- **Decided:** Released as 2.6.20 after the usual checks (no em-dashes, no personal data in the push).
+- **Shipped:** v2.6.20 on ytxtube-build with YTXTube.apk.
+- **Open:** The owner resets the test caption position (hold CC, round arrow). Portrait unfolded not re-checked after the landscape change. Earlier open items stay: TV layout not wired to endless "More videos", Shorts glass look decision, stuck-video bug, folded measurements.
+
+## 2026-11-14 - Owner report after 2.6.20, for tomorrow
+- **Asked:** Landscape was misunderstood: the page should end at the comments on the first screen, but scrolling should still show More videos. Also, swiping down on the video no longer goes back to Home. The owner is out of tokens; fix tomorrow.
+- **Decided:** Not investigated now, to save the owner's tokens. Written up with suspects in `briefs/landscape-scroll-and-swipe-down.md`, card at the top of "Next".
+- **Shipped:** Brief and card only.
+- **Open:** Both fixes, first thing next session.
+
+## 2026-11-15 - Swipe down fixed, landscape scrolls on to More videos
+- **Asked:** Make the two fixes from the brief written the night before.
+- **Decided:** Reproduced first: neither a slow swipe nor a fast flick on the video went to the mini player. Cause: 2.6.20's caption change skipped swipe detection for moves marked consumed, and the player consumes the touch itself, so every swipe looked taken. A flag that is true only while the captions are dragged replaces it. Landscape: More videos are back, after a gap that fills exactly the rest of the first screen (measured list height minus measured details block), so the first screen ends at the comments and scrolling brings the videos; this adapts to any big screen. **Why a measured gap:** a fixed number would be wrong on other foldables and when the description is open.
+- **Shipped:** f174c67, local, not pushed. Checked on the phone in portrait: slow swipe and fast flick go to the mini player, a caption drag keeps the player open.
+- **Open:** Landscape needs the owner's eyes (the phone has to be turned). The test moved the owner's captions a little; the reset button in the caption panel puts them back.
